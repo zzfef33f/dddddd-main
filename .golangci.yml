@@ -1,0 +1,196 @@
+# golangci-lint v2 configuration
+# Compatible with Go 1.20
+version: "2"
+
+run:
+  go: "1.20"
+  timeout: "5m"
+  allow-parallel-runners: true
+
+linters:
+  default: none
+  enable:
+    # Default tier — must-have for any Go project
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+
+    # Bug detection
+    - errorlint
+    - gosec
+    - sqlclosecheck
+    - nilerr
+    - bodyclose
+    - durationcheck
+    - errchkjson
+    - exhaustive
+    - forcetypeassert
+
+    # Code quality
+    - depguard
+    - dogsled
+    - dupl
+    - dupword
+    - errname
+    - funlen
+    - gocheckcompilerdirectives
+    - gochecknoinits
+    - goconst
+    - gocritic
+    - godox
+    - goprintffuncname
+    - lll
+    - mirror
+    - misspell
+    - nakedret
+    - predeclared
+    - revive
+    - testifylint
+    - unconvert
+    - unparam
+    - usestdlibvars
+    - wastedassign
+    - whitespace
+
+    # Complexity
+    - gocognit
+    - nestif
+
+    # Note: copyloopvar, intrange, modernize, perfsprint require Go 1.22+
+    # They will be enabled when Go version constraint is lifted.
+
+  settings:
+    depguard:
+      rules:
+        blocked:
+          deny:
+            - pkg: "github.com/pkg/errors"
+              desc: Use fmt.Errorf with %w or errors stdlib instead.
+            - pkg: "io/ioutil"
+              desc: Deprecated since Go 1.16. Use io and os packages instead.
+            - pkg: "github.com/instana/testify"
+              desc: Use github.com/stretchr/testify instead.
+    exhaustive:
+      default-signifies-exhaustive: true
+    dupl:
+      threshold: 100
+    funlen:
+      lines: -1
+      statements: 50
+    # goconst kept deliberately lenient (above the default min-occurrences: 3) — short, repeated
+    # literals like test fixtures and scheme strings aren't worth extracting into named constants.
+    goconst:
+      min-len: 5
+      min-occurrences: 5
+      ignore-string-values:
+        - "all"
+        - "csv"
+        - "json"
+        - "https"
+        - "http"
+        # browser registry keys/names — declarative table, not worth constants
+        - "chrome"
+        - "Chrome"
+        - "firefox"
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - experimental
+        - opinionated
+        - performance
+        - style
+      disabled-checks:
+        - dupImport
+        - hugeParam
+        - rangeValCopy  # keychainbreaker structs are large by design
+        - unnamedResult # crypto functions returning (key, iv) are clear without names
+        - whyNoLint
+    lll:
+      line-length: 140
+    gocognit:
+      min-complexity: 30
+    nestif:
+      min-complexity: 5
+    godox:
+      keywords:
+        - FIXME
+    govet:
+      enable:
+        - nilness
+    errorlint:
+      asserts: false
+    gosec:
+      excludes:
+        - G101 # hardcoded credentials — false positives on const names
+        - G115 # integer overflow on conversion — false positives on safe narrowing
+        - G117 # struct field matches secret pattern — false positive on Password fields
+        - G204 # exec.Command with variable — required for macOS `security` command
+        - G304 # file inclusion via variable — required for dynamic browser paths
+        - G703 # path traversal via taint analysis — same false-positive class as G304 (gosec 2.22+ / golangci-lint 2.11+)
+        - G401 # weak crypto SHA1 — required for Chromium PBKDF2 key derivation
+        - G402 # TLS MinVersion — not applicable (no TLS in this tool)
+        - G405 # weak crypto DES — required for Firefox 3DES decryption
+        - G501 # blocklisted import crypto/md5 — not used, keep for safety
+        - G502 # blocklisted import crypto/des — required for Firefox decryption
+        - G505 # blocklisted import crypto/sha1 — required for PBKDF2
+    errcheck:
+      check-type-assertions: true
+      exclude-functions:
+        - "os.Remove"
+        - "os.RemoveAll"
+        - "(*database/sql.DB).Close"
+        - "(*database/sql.Rows).Close"
+    misspell:
+      locale: US
+    revive:
+      rules:
+        - name: indent-error-flow
+        - name: unexported-return
+        - name: unused-parameter
+          disabled: true
+    staticcheck:
+      checks:
+        - "all"
+        - "-ST1000" # package comment — not a public library
+        - "-ST1003" # naming convention — allow platform-specific names
+
+  exclusions:
+    presets:
+      - comments
+      - std-error-handling
+      - common-false-positives
+      - legacy
+    rules:
+      - path: _test\.go
+        linters:
+          - dupl
+          - funlen
+          - gosec
+          - errcheck
+          - lll
+          - goconst
+      - source: "defer"
+        linters:
+          - errcheck
+      - text: "SELECT"
+        linters:
+          - gosec
+      - path: "cmd/hack-browser-data/main.go"
+        linters:
+          - lll
+      - path: "masterkey/gcoredump_darwin.go"
+        linters:
+          - gocognit
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    gofumpt:
+      extra-rules: true
+    goimports:
+      local-prefixes:
+        - github.com/moond4rk/hackbrowserdata
